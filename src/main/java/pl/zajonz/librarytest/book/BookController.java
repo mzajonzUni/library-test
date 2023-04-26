@@ -2,6 +2,7 @@ package pl.zajonz.librarytest.book;
 
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
+import org.springframework.data.domain.Page;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.*;
@@ -11,7 +12,6 @@ import pl.zajonz.librarytest.book.model.command.CreateBookCommand;
 
 import java.security.Principal;
 import java.time.LocalDate;
-import java.util.List;
 
 @RestController
 @RequestMapping("api/v1/books")
@@ -27,38 +27,28 @@ public class BookController {
         return BookDto.fromEntity(bookService.create(book));
     }
 
-    @PatchMapping("/block/{id}")
+    @PatchMapping("/{id}/block")
     @ResponseStatus(HttpStatus.ACCEPTED)
     public BookDto blockBook(@PathVariable int id) {
         return BookDto.fromEntity(bookService.blockBook(id));
     }
 
-    @PutMapping("/borrow/{id}")
+    @PutMapping("/{id}/borrow")
     @ResponseStatus(HttpStatus.ACCEPTED)
     public BookDto borrowBook(Principal principal, @PathVariable int id, @RequestParam LocalDate to) {
         return BookDto.fromEntity(bookService.borrowBook(principal.getName(), id, to));
     }
 
-    @PatchMapping("/return/{id}")
+    @PatchMapping("/{id}/return")
     @ResponseStatus(HttpStatus.ACCEPTED)
-    public BookDto returnBook(Principal principal, @PathVariable int id) {
-        return BookDto.fromEntity(bookService.returnBook(principal.getName(), id));
+    public BookDto returnBook(Authentication auth, @PathVariable int id) {
+        return BookDto.fromEntity(bookService.returnBook(auth.getName(), auth.getAuthorities().toString(), id));
     }
 
     @GetMapping
-    public List<BookDto> getAll(@RequestParam(required = false, defaultValue = "0") int pageNo,
+    public Page<BookDto> getAll(@RequestParam(required = false, defaultValue = "1") int pageNo,
                                 @RequestParam(required = false, defaultValue = "50") int pageSize) {
-        return bookService.getAll(pageNo, pageSize).stream()
-                .map(BookDto::fromEntity)
-                .toList();
+        return bookService.getAll(pageNo, pageSize).map(BookDto::fromEntity);
     }
-
-    @GetMapping("/user")
-    public List<BookDto> getAllByUser(Authentication auth, @RequestParam(required = false, defaultValue = "1") int userId) {
-        return bookService.getAllByUser(auth.getName(), auth.getAuthorities().toString(), userId).stream()
-                .map(BookDto::fromEntity)
-                .toList();
-    }
-
 
 }

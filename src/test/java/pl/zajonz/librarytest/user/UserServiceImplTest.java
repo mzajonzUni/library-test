@@ -1,5 +1,6 @@
 package pl.zajonz.librarytest.user;
 
+import jakarta.persistence.EntityNotFoundException;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
@@ -11,14 +12,17 @@ import org.springframework.data.domain.Pageable;
 import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.security.core.userdetails.UsernameNotFoundException;
 import org.springframework.security.crypto.password.PasswordEncoder;
+import pl.zajonz.librarytest.book.model.Book;
 import pl.zajonz.librarytest.user.model.User;
 
 import java.util.List;
 import java.util.Optional;
+import java.util.Set;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
@@ -38,6 +42,7 @@ class UserServiceImplTest {
                 .username("Test")
                 .password("####")
                 .build();
+
         when(userRepository.findByUsername(any(String.class))).thenReturn(Optional.empty());
         when(passwordEncoder.encode(any(String.class))).thenReturn("####");
         when(userRepository.save(any(User.class))).thenReturn(user);
@@ -60,6 +65,7 @@ class UserServiceImplTest {
                 .username("Test")
                 .password("Test")
                 .build();
+
         when(userRepository.findByUsername(any(String.class))).thenReturn(Optional.of(user));
         //when //then
         IllegalArgumentException exception = assertThrows(
@@ -76,14 +82,100 @@ class UserServiceImplTest {
                 .username("Test")
                 .password("Test")
                 .build();
-        List<User> userList = List.of(user);
-        Page<User> userPage = new PageImpl<>(userList);
+        Page<User> userPage = new PageImpl<>(List.of(user));
 
         when(userRepository.findAll(any(Pageable.class))).thenReturn(userPage);
         //when
-        List<User> returned = userService.getAll(0, 1);
+        Page<User> returned = userService.getAll(1, 1);
+
         //then
-        assertEquals(userList, returned);
+        assertEquals(userPage, returned);
+    }
+
+    @Test
+    void testGetAll_WrongPageNumber_ResultsInListUserBeingReturned() {
+        //given
+        String exceptionMsg = "Page index must not be less than zero";
+
+        //when
+        IllegalArgumentException exception = assertThrows(IllegalArgumentException.class,
+                () -> userService.getAll(0, 1));
+
+        //then
+        assertEquals(exceptionMsg, exception.getMessage());
+    }
+
+    @Test
+    void testGetAllBooks_User_CorrectValues() {
+        //given
+        Book book = Book.builder().build();
+        User user = User.builder()
+                .username("Test")
+                .password("Test")
+                .books(Set.of(book))
+                .role("ROLE_USER")
+                .build();
+        List<Book> bookList = List.of(book);
+
+        when(userRepository.findById(anyInt())).thenReturn(Optional.of(user));
+        //when
+        List<Book> returned = userService.getAllBooks("Test", "ROLE_USER", 1);
+
+        //then
+        assertEquals(bookList, returned);
+    }
+
+    @Test
+    void testGetAllBooks_Employee_CorrectValues() {
+        //given
+        Book book = Book.builder().build();
+        User user = User.builder()
+                .username("Test")
+                .password("Test")
+                .books(Set.of(book))
+                .role("ROLE_USER")
+                .build();
+        List<Book> bookList = List.of(book);
+
+        when(userRepository.findById(anyInt())).thenReturn(Optional.of(user));
+        //when
+        List<Book> returned = userService.getAllBooks("Test", "ROLE_EMPLOYEE", 1);
+
+        //then
+        assertEquals(bookList, returned);
+    }
+
+    @Test
+    void testGetAllBooks_ResultsInEntityNotFoundException() {
+        //given
+        String exceptionMsg = "Not found user with id: 1";
+
+        when(userRepository.findById(anyInt())).thenReturn(Optional.empty());
+        //when
+        EntityNotFoundException exception = assertThrows(EntityNotFoundException.class,
+                () -> userService.getAllBooks("Test", "ROLE_USER", 1));
+        //then
+        assertEquals(exceptionMsg, exception.getMessage());
+    }
+
+    @Test
+    void testGetAllBooks_ResultsInIllegalArgumentException() {
+        //given
+        String exceptionMsg = "No access to book with id: 1";
+        Book book = Book.builder().build();
+        User user = User.builder()
+                .username("Test")
+                .password("Test")
+                .books(Set.of(book))
+                .role("ROLE_USER")
+                .build();
+
+        when(userRepository.findById(anyInt())).thenReturn(Optional.of(user));
+        //when
+        IllegalArgumentException exception = assertThrows(IllegalArgumentException.class,
+                () -> userService.getAllBooks("TU", "ROLE_USER", 1));
+        //then
+        assertEquals(exceptionMsg, exception.getMessage());
     }
 
     @Test

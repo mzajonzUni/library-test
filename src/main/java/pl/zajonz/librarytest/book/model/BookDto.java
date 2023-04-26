@@ -13,9 +13,9 @@ public class BookDto {
     private int id;
     private String title;
     private String author;
+    private String username;
     private boolean isBlocked;
     private State state;
-    private String userName;
     private LocalDate fromDate;
     private LocalDate toDate;
 
@@ -25,7 +25,7 @@ public class BookDto {
                 .title(book.getTitle())
                 .author(book.getAuthor())
                 .isBlocked(book.isBlocked())
-                .userName(book.getUser() == null ? null : book.getUser().getUsername())
+                .username(book.getUser() == null ? null : book.getUser().getUsername())
                 .state(book.getState())
                 .fromDate(book.getFromDate())
                 .toDate(book.getToDate())

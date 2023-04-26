@@ -21,6 +21,7 @@ import java.util.Optional;
 import java.util.Set;
 
 import static org.junit.jupiter.api.Assertions.*;
+import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.Mockito.any;
 import static org.mockito.Mockito.when;
 
@@ -44,6 +45,7 @@ class BookServiceImplTest {
         when(bookRepository.save(any(Book.class))).thenReturn(book);
         //when
         Book returned = bookService.create(book);
+
         //then
         assertEquals(book, returned);
         assertFalse(returned.isBlocked());
@@ -58,7 +60,7 @@ class BookServiceImplTest {
                 .title("Test")
                 .author("Test")
                 .build();
-        when(bookRepository.findById(any(Integer.class))).thenReturn(Optional.of(book));
+        when(bookRepository.findById(anyInt())).thenReturn(Optional.of(book));
         when(bookRepository.save(any(Book.class))).thenReturn(book);
         //when
         Book returned = bookService.blockBook(1);
@@ -72,7 +74,7 @@ class BookServiceImplTest {
         //given
         String exceptionMsg = "Not found book with id: 1";
 
-        when(bookRepository.findById(any(Integer.class))).thenReturn(Optional.empty());
+        when(bookRepository.findById(anyInt())).thenReturn(Optional.empty());
 
         //when //then
         EntityNotFoundException exception = assertThrows(
@@ -96,7 +98,7 @@ class BookServiceImplTest {
                 .state(State.READY)
                 .build();
         Book book2 = Book.builder()
-                .id(1)
+                .id(2)
                 .title("Test")
                 .author("Test")
                 .user(user)
@@ -105,7 +107,7 @@ class BookServiceImplTest {
                 .build();
         user.setBooks(Set.of(book));
         when(userRepository.findByUsername(any(String.class))).thenReturn(Optional.of(user));
-        when(bookRepository.findById(any(Integer.class))).thenReturn(Optional.of(book));
+        when(bookRepository.findWithLockingById(anyInt())).thenReturn(Optional.of(book));
         when(bookRepository.save(any(Book.class))).thenReturn(book2);
         //when
         Book returned = bookService.borrowBook("Test", 1, LocalDate.now().plusDays(10));
@@ -126,30 +128,11 @@ class BookServiceImplTest {
     }
 
     @Test
-    void testBorrowBook_IncorrectUser_ResultsInUsernameNotFoundException() {
-        //given
-        String exceptionMsg = "Not found user with username: Test";
-
-        when(userRepository.findByUsername(any(String.class))).thenReturn(Optional.empty());
-        //when //then
-        UsernameNotFoundException exception = assertThrows(
-                UsernameNotFoundException.class,
-                () -> bookService.borrowBook("Test", 1, LocalDate.now().plusDays(10)));
-
-        assertEquals(exceptionMsg, exception.getMessage());
-    }
-
-    @Test
-    void testBorrowBook_IncorrectBook_ResultsInEntityNotFoundException() {
+    void testBorrowBook_BookNotFound_ResultsInEntityNotFoundException() {
         //given
         String exceptionMsg = "Not found book with id: 1";
-        User user = User.builder()
-                .id(1)
-                .username("Test")
-                .role("ROLE_USER")
-                .build();
-        when(userRepository.findByUsername(any(String.class))).thenReturn(Optional.of(user));
-        when(bookRepository.findById(any(Integer.class))).thenReturn(Optional.empty());
+
+        when(bookRepository.findWithLockingById(anyInt())).thenReturn(Optional.empty());
         //when //then
         EntityNotFoundException exception = assertThrows(
                 EntityNotFoundException.class,
@@ -162,11 +145,6 @@ class BookServiceImplTest {
     void testBorrowBook_BookBlocked_ResultsInEntityNotFoundException() {
         //given
         String exceptionMsg = "Book with id: 1 cannot be borrowed";
-        User user = User.builder()
-                .id(1)
-                .username("Test")
-                .role("ROLE_USER")
-                .build();
         Book book = Book.builder()
                 .id(1)
                 .title("Test")
@@ -175,8 +153,7 @@ class BookServiceImplTest {
                 .state(State.READY)
                 .build();
 
-        when(userRepository.findByUsername(any(String.class))).thenReturn(Optional.of(user));
-        when(bookRepository.findById(any(Integer.class))).thenReturn(Optional.of(book));
+        when(bookRepository.findWithLockingById(anyInt())).thenReturn(Optional.of(book));
         //when //then
         IllegalArgumentException exception = assertThrows(
                 IllegalArgumentException.class,
@@ -186,14 +163,9 @@ class BookServiceImplTest {
     }
 
     @Test
-    void testBorrowBook_StateBorrowed_ResultsInIllegalArgumentException() {
+    void testBorrowBook_BookBorrowed_ResultsInIllegalArgumentException() {
         //given
         String exceptionMsg = "Book is borrowed to: " + LocalDate.now().plusDays(10);
-        User user = User.builder()
-                .id(1)
-                .username("Test")
-                .role("ROLE_USER")
-                .build();
         Book book = Book.builder()
                 .id(1)
                 .title("Test")
@@ -202,11 +174,32 @@ class BookServiceImplTest {
                 .toDate(LocalDate.now().plusDays(10))
                 .build();
 
-        when(userRepository.findByUsername(any(String.class))).thenReturn(Optional.of(user));
-        when(bookRepository.findById(any(Integer.class))).thenReturn(Optional.of(book));
+        when(bookRepository.findWithLockingById(anyInt())).thenReturn(Optional.of(book));
         //when //then
         IllegalArgumentException exception = assertThrows(
                 IllegalArgumentException.class,
+                () -> bookService.borrowBook("Test", 1, LocalDate.now().plusDays(10)));
+
+        assertEquals(exceptionMsg, exception.getMessage());
+    }
+
+    @Test
+    void testBorrowBook_UserNotFound_ResultsInUsernameNotFoundException() {
+        //given
+        String exceptionMsg = "Not found user with username: Test";
+        Book book = Book.builder()
+                .id(1)
+                .title("Test")
+                .author("Test")
+                .state(State.READY)
+                .toDate(LocalDate.now().plusDays(10))
+                .build();
+
+        when(bookRepository.findWithLockingById(anyInt())).thenReturn(Optional.of(book));
+        when(userRepository.findByUsername(any(String.class))).thenReturn(Optional.empty());
+        //when //then
+        UsernameNotFoundException exception = assertThrows(
+                UsernameNotFoundException.class,
                 () -> bookService.borrowBook("Test", 1, LocalDate.now().plusDays(10)));
 
         assertEquals(exceptionMsg, exception.getMessage());
@@ -224,49 +217,77 @@ class BookServiceImplTest {
                 .id(1)
                 .title("Test")
                 .author("Test")
+                .user(user)
                 .state(State.READY)
                 .build();
         user.setBooks(Set.of(book));
-        when(userRepository.findByUsername(any(String.class))).thenReturn(Optional.of(user));
-        when(bookRepository.findById(any(Integer.class))).thenReturn(Optional.of(book));
+
+        when(bookRepository.findById(anyInt())).thenReturn(Optional.of(book));
         when(bookRepository.save(book)).thenReturn(book);
         //when
-        Book returned = bookService.returnBook(user.getUsername(), 1);
+        Book returned = bookService.returnBook(user.getUsername(), user.getRole(), 1);
 
         //then
         assertEquals(book, returned);
     }
 
     @Test
-    void testReturnBook_IncorrectBook_ResultsInEntityNotFoundException() {
+    void testReturnBook_Employee_ResultsInBookBeingReturned() {
         //given
         User user = User.builder()
                 .id(1)
                 .username("Test")
                 .role("ROLE_USER")
                 .build();
+        Book book = Book.builder()
+                .id(1)
+                .title("Test")
+                .author("Test")
+                .user(user)
+                .state(State.READY)
+                .build();
+        user.setBooks(Set.of(book));
+
+        when(bookRepository.findById(anyInt())).thenReturn(Optional.of(book));
+        when(bookRepository.save(book)).thenReturn(book);
+        //when
+        Book returned = bookService.returnBook("Employee", "[ROLE_EMPLOYEE]", 1);
+
+        //then
+        assertEquals(book, returned);
+    }
+
+    @Test
+    void testReturnBook_BookNotFound_ResultsInEntityNotFoundException() {
+        //given
         String exceptionMsg = "Not found book with id: 1";
 
-        when(userRepository.findByUsername(any(String.class))).thenReturn(Optional.of(user));
-        when(bookRepository.findById(any(Integer.class))).thenReturn(Optional.empty());
+        when(bookRepository.findById(anyInt())).thenReturn(Optional.empty());
         //when //then
         EntityNotFoundException exception = assertThrows(
                 EntityNotFoundException.class,
-                () -> bookService.returnBook("Test", 1));
+                () -> bookService.returnBook("Test", "[ROLE_USER]", 1));
 
         assertEquals(exceptionMsg, exception.getMessage());
     }
 
     @Test
-    void testReturnBook_IncorrectUser_ResultsInUsernameNotFoundException() {
+    void testReturnBook_BookNotBorrowed_ResultsInIllegalArgumentException() {
         //given
-        String exceptionMsg = "Not found user with username: Test";
+        String exceptionMsg = "Book with id: 1 is not borrowed";
+        Book book = Book.builder()
+                .id(1)
+                .title("Test")
+                .author("Test")
+                .state(State.READY)
+                .build();
 
-        when(userRepository.findByUsername(any(String.class))).thenReturn(Optional.empty());
+        when(bookRepository.findById(anyInt())).thenReturn(Optional.of(book));
+
         //when //then
-        UsernameNotFoundException exception = assertThrows(
-                UsernameNotFoundException.class,
-                () -> bookService.returnBook("Test", 1));
+        IllegalArgumentException exception = assertThrows(
+                IllegalArgumentException.class,
+                () -> bookService.returnBook("TestNoAccess", "[ROLE_USER]", 1));
 
         assertEquals(exceptionMsg, exception.getMessage());
     }
@@ -275,26 +296,26 @@ class BookServiceImplTest {
     void testReturnBook_NoAccess_ResultsInIllegalArgumentException() {
         //given
         String exceptionMsg = "No access to book with id: 1";
-
-        Book book = Book.builder()
-                .id(1)
-                .title("Test")
-                .author("Test")
-                .state(State.READY)
-                .build();
         User user = User.builder()
                 .id(1)
                 .username("Test")
                 .role("ROLE_USER")
                 .books(Set.of())
                 .build();
-        when(userRepository.findByUsername(any(String.class))).thenReturn(Optional.of(user));
-        when(bookRepository.findById(any(Integer.class))).thenReturn(Optional.of(book));
+        Book book = Book.builder()
+                .id(1)
+                .title("Test")
+                .author("Test")
+                .state(State.BORROWED)
+                .user(user)
+                .build();
+
+        when(bookRepository.findById(anyInt())).thenReturn(Optional.of(book));
 
         //when //then
         IllegalArgumentException exception = assertThrows(
                 IllegalArgumentException.class,
-                () -> bookService.returnBook("Test", 1));
+                () -> bookService.returnBook("TestNoAccess", "[ROLE_USER]", 1));
 
         assertEquals(exceptionMsg, exception.getMessage());
     }
@@ -307,57 +328,25 @@ class BookServiceImplTest {
                 .title("Test")
                 .author("Test")
                 .build();
-        List<Book> bookList = List.of(book);
-        Page<Book> bookPage = new PageImpl<>(bookList);
+        Page<Book> bookPage = new PageImpl<>(List.of(book));
 
         when(bookRepository.findAll(any(Pageable.class))).thenReturn(bookPage);
         //when
-        List<Book> returned = bookService.getAll(0, 1);
+        Page<Book> returned = bookService.getAll(1, 1);
         //then
-        assertEquals(bookList, returned);
+        assertEquals(bookPage, returned);
     }
 
     @Test
-    void testGetAllByUser_RoleUser_ResultsInListBookBeingReturned() {
+    void testGetAll_WrongPageNumber_ResultsInListUserBeingReturned() {
         //given
-        Book book = Book.builder()
-                .id(1)
-                .title("Test")
-                .author("Test")
-                .build();
-        User user = User.builder()
-                .id(1)
-                .username("Test")
-                .role("ROLE_USER")
-                .books(Set.of(book))
-                .build();
-        when(bookRepository.findAllByUser_Username(any(String.class))).thenReturn(List.of(book));
-        //when
-        List<Book> returned = bookService.getAllByUser("Test", user.getAuthorities().toString(), 0);
+        String exceptionMsg = "Page index must not be less than zero";
 
+        //when
+        IllegalArgumentException exception = assertThrows(IllegalArgumentException.class,
+                () -> bookService.getAll(0, 1));
         //then
-        assertEquals(user.getBooks().stream().toList(), returned);
+        assertEquals(exceptionMsg, exception.getMessage());
     }
 
-    @Test
-    void testGetAllByUser_RoleEmployee_ResultsInListBookBeingReturned() {
-        //given
-        Book book = Book.builder()
-                .id(1)
-                .title("Test")
-                .author("Test")
-                .build();
-        List<Book> bookList = List.of(book);
-        User employee = User.builder()
-                .id(1)
-                .username("TestE")
-                .role("ROLE_EMPLOYEE")
-                .build();
-        when(bookRepository.findAllByUser_Id(any(Integer.class))).thenReturn(bookList);
-        //when
-        List<Book> returned = bookService.getAllByUser("TestE", employee.getAuthorities().toString(), 2);
-
-        //then
-        assertEquals(bookList, returned);
-    }
 }

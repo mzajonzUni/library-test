@@ -1,6 +1,7 @@
 package pl.zajonz.librarytest.book;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.jayway.jsonpath.JsonPath;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -10,6 +11,7 @@ import org.springframework.http.MediaType;
 import org.springframework.security.test.context.support.WithMockUser;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.test.web.servlet.MvcResult;
 import pl.zajonz.librarytest.book.model.Book;
 import pl.zajonz.librarytest.book.model.command.CreateBookCommand;
 import pl.zajonz.librarytest.common.State;
@@ -17,9 +19,9 @@ import pl.zajonz.librarytest.user.UserRepository;
 import pl.zajonz.librarytest.user.model.User;
 
 import java.time.LocalDate;
-import java.util.List;
 
 import static org.hamcrest.Matchers.*;
+import static org.junit.jupiter.api.Assertions.*;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.*;
 import static org.springframework.test.web.servlet.result.MockMvcResultHandlers.print;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -28,7 +30,6 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 @AutoConfigureMockMvc
 @SpringBootTest
 @ActiveProfiles("test")
-@WithMockUser(username = "Admin", password = "Admin", roles = "EMPLOYEE")
 class BookControllerTest {
 
     @Autowired
@@ -47,11 +48,48 @@ class BookControllerTest {
     }
 
     @Test
-    void testCreate_CorrectValues() throws Exception {
+    @WithMockUser(username = "Admin", password = "Admin", roles = "EMPLOYEE")
+    void testCreate_RoleEmployee_CorrectValues() throws Exception {
         //given
         CreateBookCommand command = CreateBookCommand.builder()
-                .title("Test")
-                .author("Test")
+                .title("Titletest")
+                .author("Authortest")
+                .build();
+
+        //when //then
+        MvcResult result = mockMvc.perform(post("/api/v1/books")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(command)))
+                .andDo(print())
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$", notNullValue()))
+                .andExpect(jsonPath("$.title", equalTo(command.getTitle())))
+                .andExpect(jsonPath("$.author", equalTo(command.getAuthor())))
+                .andExpect(jsonPath("$.blocked", equalTo(false)))
+                .andExpect(jsonPath("$.state", equalTo(State.READY.toString())))
+                .andReturn();
+
+        String responseString = result.getResponse().getContentAsString();
+        int bookId = JsonPath.parse(responseString).read("$.id", Integer.class);
+
+        Book createdBook = bookRepository.findById(bookId).orElse(null);
+        assertNotNull(createdBook);
+        assertEquals(command.getAuthor(), createdBook.getAuthor());
+        assertEquals(command.getTitle(), createdBook.getTitle());
+        assertNull(createdBook.getUser());
+        assertNull(createdBook.getToDate());
+        assertNull(createdBook.getFromDate());
+        assertFalse(createdBook.isBlocked());
+        assertEquals(State.READY, createdBook.getState());
+    }
+
+    @Test
+    @WithMockUser(username = "Admin", password = "Admin", roles = "EMPLOYEE")
+    void testCreate_RoleEmployee_Validation() throws Exception {
+        //given
+        CreateBookCommand command = CreateBookCommand.builder()
+                .title("")
+                .author("")
                 .build();
 
         //when //then
@@ -59,16 +97,19 @@ class BookControllerTest {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(command)))
                 .andDo(print())
-                .andExpect(status().isCreated())
-                .andExpect(jsonPath("$", notNullValue()))
-                .andExpect(jsonPath("$.title", equalTo("Test")))
-                .andExpect(jsonPath("$.author", equalTo("Test")))
-                .andExpect(jsonPath("$.blocked", equalTo(false)))
-                .andExpect(jsonPath("$.state", equalTo(State.READY.toString())));
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.timestamp", notNullValue()))
+                .andExpect(jsonPath("$.message", equalTo("Validation errors")))
+                .andExpect(jsonPath("$.violations[*].message",
+                        containsInAnyOrder("title cannot be blank",
+                                "author cannot be blank",
+                                "title has to match the pattern",
+                                "author has to match the pattern")));
     }
 
     @Test
-    void testBlockBook_CorrectValues() throws Exception {
+    @WithMockUser(username = "Admin", password = "Admin", roles = "EMPLOYEE")
+    void testBlockBook_RoleEmployee_CorrectValues() throws Exception {
         //given
         Book book = Book.builder()
                 .author("Test")
@@ -77,37 +118,39 @@ class BookControllerTest {
         bookRepository.save(book);
 
         //when //then
-        mockMvc.perform(patch("/api/v1/books/block/" + book.getId()))
+        mockMvc.perform(patch("/api/v1/books/" + book.getId() + "/block"))
                 .andDo(print())
                 .andExpect(status().isAccepted())
                 .andExpect(jsonPath("$", notNullValue()))
                 .andExpect(jsonPath("$.title", equalTo("Test")))
                 .andExpect(jsonPath("$.author", equalTo("Test")))
                 .andExpect(jsonPath("$.blocked", equalTo(true)));
+
+        Book savedBook = bookRepository.findById(book.getId()).orElse(null);
+        assertNotNull(savedBook);
+        assertEquals(book.getAuthor(), savedBook.getAuthor());
+        assertEquals(book.getTitle(), savedBook.getTitle());
+        assertTrue(savedBook.isBlocked());
     }
 
     @Test
     @WithMockUser(username = "user", password = "user", roles = "USER")
-    void testBlockBook_ShouldReturnForbidden() throws Exception {
+    void testBlockBook_RoleUser_ShouldReturnForbidden() throws Exception {
         //given
-        Book book = Book.builder()
-                .author("Test")
-                .title("Test")
-                .build();
-        bookRepository.save(book);
 
         //when //then
-        mockMvc.perform(patch("/api/v1/books/block/" + book.getId()))
+        mockMvc.perform(patch("/api/v1/books/1/block"))
                 .andDo(print())
                 .andExpect(status().isForbidden());
     }
 
     @Test
-    void testBlockBook_IncorrectValues() throws Exception {
+    @WithMockUser(username = "Admin", password = "Admin", roles = "EMPLOYEE")
+    void testBlockBook_RoleEmployee_BookNotFound_ShouldReturnEntityNotFoundException() throws Exception {
         //given
 
         //when //then
-        mockMvc.perform(patch("/api/v1/books/block/100"))
+        mockMvc.perform(patch("/api/v1/books/100/block"))
                 .andDo(print())
                 .andExpect(status().isNotFound())
                 .andExpect(jsonPath("$.timestamp", notNullValue()))
@@ -116,7 +159,7 @@ class BookControllerTest {
 
     @Test
     @WithMockUser(username = "user", password = "user", roles = "USER")
-    void testBorrowBook() throws Exception {
+    void testBorrowBook_RoleUser_CorrectValues() throws Exception {
         //given
         User user = User.builder()
                 .username("user")
@@ -132,35 +175,31 @@ class BookControllerTest {
         bookRepository.save(book);
 
         //when //then
-        mockMvc.perform(put("/api/v1/books/borrow/" + book.getId())
+        mockMvc.perform(put("/api/v1/books/" + book.getId() + "/borrow")
                         .param("to", LocalDate.now().plusDays(10).toString()))
                 .andDo(print())
                 .andExpect(status().isAccepted())
                 .andExpect(jsonPath("$", notNullValue()))
                 .andExpect(jsonPath("$.title", equalTo("Test")))
                 .andExpect(jsonPath("$.author", equalTo("Test")))
-                .andExpect(jsonPath("$.userName", equalTo(user.getUsername())))
+                .andExpect(jsonPath("$.username", equalTo(user.getUsername())))
                 .andExpect(jsonPath("$.state", equalTo(State.BORROWED.toString())));
+
+        Book savedBook = bookRepository.findById(book.getId()).orElse(null);
+        assertNotNull(savedBook);
+        assertEquals(LocalDate.now().plusDays(10), savedBook.getToDate());
+        assertEquals(user.getUsername(), savedBook.getUser().getUsername());
+        assertNotNull(savedBook.getFromDate());
+        assertEquals(State.BORROWED, savedBook.getState());
     }
 
     @Test
-    void testBorrowBook_ShouldReturnForbidden() throws Exception {
+    @WithMockUser(username = "Admin", password = "Admin", roles = "EMPLOYEE")
+    void testBorrowBook_RoleEmployee_ShouldReturnForbidden() throws Exception {
         //given
-        User user = User.builder()
-                .username("user")
-                .password("user")
-                .role("ROLE_USER")
-                .build();
-        userRepository.save(user);
-        Book book = Book.builder()
-                .author("Test")
-                .title("Test")
-                .state(State.READY)
-                .build();
-        bookRepository.save(book);
 
         //when //then
-        mockMvc.perform(put("/api/v1/books/borrow/" + book.getId())
+        mockMvc.perform(put("/api/v1/books/1/borrow")
                         .param("to", LocalDate.now().plusDays(10).toString()))
                 .andDo(print())
                 .andExpect(status().isForbidden());
@@ -168,23 +207,11 @@ class BookControllerTest {
 
     @Test
     @WithMockUser(username = "user", password = "user", roles = "USER")
-    void testBorrowBook_ShouldThrowIllegalArgumentException() throws Exception {
+    void testBorrowBook_RoleUser_IncorrectToDate_ShouldThrowIllegalArgumentException() throws Exception {
         //given
-        User user = User.builder()
-                .username("user")
-                .password("user")
-                .role("ROLE_USER")
-                .build();
-        userRepository.save(user);
-        Book book = Book.builder()
-                .author("Test")
-                .title("Test")
-                .state(State.READY)
-                .build();
-        bookRepository.save(book);
 
         //when //then
-        mockMvc.perform(put("/api/v1/books/borrow/" + book.getId())
+        mockMvc.perform(put("/api/v1/books/1/borrow")
                         .param("to", LocalDate.now().minusDays(10).toString()))
                 .andDo(print())
                 .andExpect(status().isBadRequest())
@@ -194,17 +221,11 @@ class BookControllerTest {
 
     @Test
     @WithMockUser(username = "user", password = "user", roles = "USER")
-    void testBorrowBook_ShouldThrowEntityNotFoundException() throws Exception {
+    void testBorrowBook_RoleUser_BookNotFound_ShouldThrowEntityNotFoundException() throws Exception {
         //given
-        User user = User.builder()
-                .username("user")
-                .password("user")
-                .role("ROLE_USER")
-                .build();
-        userRepository.save(user);
 
         //when //then
-        mockMvc.perform(put("/api/v1/books/borrow/100")
+        mockMvc.perform(put("/api/v1/books/100/borrow")
                         .param("to", LocalDate.now().plusDays(10).toString()))
                 .andDo(print())
                 .andExpect(status().isNotFound())
@@ -214,14 +235,8 @@ class BookControllerTest {
 
     @Test
     @WithMockUser(username = "user", password = "user", roles = "USER")
-    void testBorrowBook_BookBlocked_ShouldThrowIllegalArgumentException() throws Exception {
+    void testBorrowBook_RoleUser_BookBlocked_ShouldThrowIllegalArgumentException() throws Exception {
         //given
-        User user = User.builder()
-                .username("user")
-                .password("user")
-                .role("ROLE_USER")
-                .build();
-        userRepository.save(user);
         Book book = Book.builder()
                 .author("Test")
                 .title("Test")
@@ -231,7 +246,7 @@ class BookControllerTest {
         bookRepository.save(book);
 
         //when //then
-        mockMvc.perform(put("/api/v1/books/borrow/" + book.getId())
+        mockMvc.perform(put("/api/v1/books/" + book.getId() + "/borrow")
                         .param("to", LocalDate.now().plusDays(10).toString()))
                 .andDo(print())
                 .andExpect(status().isBadRequest())
@@ -242,7 +257,7 @@ class BookControllerTest {
 
     @Test
     @WithMockUser(username = "user", password = "user", roles = "USER")
-    void testBorrowBook_BookBorrowed_ShouldThrowIllegalArgumentException() throws Exception {
+    void testBorrowBook_RoleUser_BookBorrowed_ShouldThrowIllegalArgumentException() throws Exception {
         //given
         User user = User.builder()
                 .username("user")
@@ -254,12 +269,13 @@ class BookControllerTest {
                 .author("Test")
                 .title("Test")
                 .state(State.BORROWED)
+                .user(user)
                 .toDate(LocalDate.now().plusDays(10))
                 .build();
         bookRepository.save(book);
 
         //when //then
-        mockMvc.perform(put("/api/v1/books/borrow/" + book.getId())
+        mockMvc.perform(put("/api/v1/books/" + book.getId() + "/borrow")
                         .param("to", LocalDate.now().plusDays(10).toString()))
                 .andDo(print())
                 .andExpect(status().isBadRequest())
@@ -270,7 +286,7 @@ class BookControllerTest {
 
     @Test
     @WithMockUser(username = "user", password = "user", roles = "USER")
-    void testReturnBook() throws Exception {
+    void testReturnBook_RoleUser_CorrectValues() throws Exception {
         //given
         User user = User.builder()
                 .username("user")
@@ -286,30 +302,34 @@ class BookControllerTest {
         bookRepository.save(book);
 
         //when //then
-        mockMvc.perform(patch("/api/v1/books/return/" + book.getId()))
+        mockMvc.perform(patch("/api/v1/books/" + book.getId() + "/return"))
                 .andDo(print())
                 .andExpect(status().isAccepted())
                 .andExpect(jsonPath("$", notNullValue()))
                 .andExpect(jsonPath("$.title", equalTo("Test")))
                 .andExpect(jsonPath("$.author", equalTo("Test")))
                 .andExpect(jsonPath("$.state", equalTo(State.READY.toString())));
+
+        Book returnedBook = bookRepository.findById(book.getId()).orElse(null);
+        assertNotNull(returnedBook);
+        assertEquals(book.getAuthor(), returnedBook.getAuthor());
+        assertEquals(book.getTitle(), returnedBook.getTitle());
+        assertNull(returnedBook.getUser());
+        assertNull(returnedBook.getToDate());
+        assertNull(returnedBook.getFromDate());
+        assertEquals(State.READY, returnedBook.getState());
     }
 
     @Test
-    void testReturnBook_EMPLOYEE() throws Exception {
+    @WithMockUser(username = "Admin", password = "Admin", roles = "EMPLOYEE")
+    void testReturnBook_RoleEmployee_CorrectValues() throws Exception {
         //given
-        User userE = User.builder()
-                .username("Admin")
-                .password("Admin")
-                .role("ROLE_EMPLOYEE")
-                .build();
         User user = User.builder()
                 .username("user")
                 .password("user")
                 .role("ROLE_USER")
                 .build();
         userRepository.save(user);
-        userRepository.save(userE);
         Book book = Book.builder()
                 .author("Test")
                 .title("Test")
@@ -318,32 +338,31 @@ class BookControllerTest {
         bookRepository.save(book);
 
         //when //then
-        mockMvc.perform(patch("/api/v1/books/return/" + book.getId()))
+        mockMvc.perform(patch("/api/v1/books/" + book.getId() + "/return"))
                 .andDo(print())
                 .andExpect(status().isAccepted())
                 .andExpect(jsonPath("$", notNullValue()))
                 .andExpect(jsonPath("$.title", equalTo("Test")))
                 .andExpect(jsonPath("$.author", equalTo("Test")))
                 .andExpect(jsonPath("$.state", equalTo(State.READY.toString())));
+
+        Book returnedBook = bookRepository.findById(book.getId()).orElse(null);
+        assertNotNull(returnedBook);
+        assertEquals(book.getAuthor(), returnedBook.getAuthor());
+        assertEquals(book.getTitle(), returnedBook.getTitle());
+        assertNull(returnedBook.getUser());
+        assertNull(returnedBook.getToDate());
+        assertNull(returnedBook.getFromDate());
+        assertEquals(State.READY, returnedBook.getState());
     }
 
     @Test
-    void testReturnBook_ShouldReturnEntityNotFoundException() throws Exception {
+    @WithMockUser(username = "user", password = "user", roles = "USER")
+    void testReturnBook_RoleUser_BookNotFound_ShouldReturnEntityNotFoundException() throws Exception {
         //given
-        User userE = User.builder()
-                .username("Admin")
-                .password("Admin")
-                .role("ROLE_EMPLOYEE")
-                .build();
-        User user = User.builder()
-                .username("user")
-                .password("user")
-                .role("ROLE_USER")
-                .build();
-        userRepository.save(user);
-        userRepository.save(userE);
+
         //when //then
-        mockMvc.perform(patch("/api/v1/books/return/1"))
+        mockMvc.perform(patch("/api/v1/books/1/return"))
                 .andDo(print())
                 .andExpect(status().isNotFound())
                 .andExpect(jsonPath("$.timestamp", notNullValue()))
@@ -351,21 +370,15 @@ class BookControllerTest {
     }
 
     @Test
-    void testReturnBook_ShouldReturnIllegalArgumentException() throws Exception {
+    @WithMockUser(username = "user", password = "user", roles = "USER")
+    void testReturnBook_RoleUser_AccessDenied_ShouldReturnIllegalArgumentException() throws Exception {
         //given
-        User userE = User.builder()
+        User user = User.builder()
                 .username("Admin")
                 .password("Admin")
                 .role("ROLE_USER")
                 .build();
-        User user = User.builder()
-                .username("user")
-                .password("user")
-                .role("ROLE_USER")
-                .build();
         userRepository.save(user);
-        userRepository.save(userE);
-
         Book book = Book.builder()
                 .author("Test")
                 .title("Test")
@@ -373,7 +386,7 @@ class BookControllerTest {
                 .build();
         bookRepository.save(book);
         //when //then
-        mockMvc.perform(patch("/api/v1/books/return/" + book.getId()))
+        mockMvc.perform(patch("/api/v1/books/" + book.getId() + "/return"))
                 .andDo(print())
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.timestamp", notNullValue()))
@@ -382,101 +395,73 @@ class BookControllerTest {
     }
 
     @Test
-    void testGetAll() throws Exception {
+    @WithMockUser(username = "user", password = "user", roles = "USER")
+    void testReturnBook_RoleUser_BookNotBorrowed_ShouldReturnIllegalArgumentException() throws Exception {
         //given
         Book book = Book.builder()
-                .title("Test")
                 .author("Test")
+                .title("Test")
+                .build();
+        bookRepository.save(book);
+
+        //when //then
+        mockMvc.perform(patch("/api/v1/books/" + book.getId() + "/return"))
+                .andDo(print())
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.timestamp", notNullValue()))
+                .andExpect(jsonPath("$.message", equalTo("Book with id: " +
+                        book.getId() + " is not borrowed")));
+    }
+
+    @Test
+    void testGetAll_AllUsers_CorrectValues() throws Exception {
+        //given
+        Book book = Book.builder()
+                .title("Test1")
+                .author("Test1")
                 .state(State.BORROWED)
                 .build();
         Book book1 = Book.builder()
-                .title("Test")
-                .author("Test")
-                .state(State.BORROWED)
+                .title("Test2")
+                .author("Test2")
+                .state(State.READY)
                 .build();
         Book book2 = Book.builder()
-                .title("Test")
-                .author("Test")
-                .state(State.BORROWED)
+                .title("Test3")
+                .author("Test3")
+                .state(State.READY)
                 .build();
-        List<Book> bookList = List.of(book, book1);
         bookRepository.save(book);
         bookRepository.save(book1);
         bookRepository.save(book2);
 
         //when //then
         mockMvc.perform(get("/api/v1/books")
-                        .param("pageNo", "0")
+                        .param("pageNo", "1")
                         .param("pageSize", "2"))
                 .andDo(print())
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$").isArray())
-                .andExpect(jsonPath("$", hasSize(bookList.size())))
-                .andExpect(jsonPath("$[0].title", equalTo("Test")))
-                .andExpect(jsonPath("$[0].author", equalTo("Test")))
-                .andExpect(jsonPath("$[0].state", equalTo(State.BORROWED.toString())));
-
+                .andExpect(jsonPath("$.content[0].title", equalTo(book.getTitle())))
+                .andExpect(jsonPath("$.content[0].author", equalTo(book.getAuthor())))
+                .andExpect(jsonPath("$.content[1].title", equalTo(book1.getTitle())))
+                .andExpect(jsonPath("$.content[1].title", equalTo(book1.getAuthor())))
+                .andExpect(jsonPath("$.numberOfElements", equalTo(2)))
+                .andExpect(jsonPath("$.size", equalTo(2)))
+                .andExpect(jsonPath("$.totalPages", equalTo(2)));
     }
 
     @Test
-    @WithMockUser(username = "user", password = "user", roles = "USER")
-    void testGetAllByUser_USER() throws Exception {
+    void testGetAll_AllUsers_WrongPageNumber_ShouldThrowIllegalArgumentException() throws Exception {
         //given
-        User user = User.builder()
-                .username("user")
-                .password("user")
-                .role("ROLE_USER")
-                .build();
-        userRepository.save(user);
-        Book book = Book.builder()
-                .title("Test")
-                .author("Test")
-                .state(State.BORROWED)
-                .user(user)
-                .build();
-        List<Book> bookList = List.of(book);
-        book.setUser(user);
-        bookRepository.save(book);
 
         //when //then
-        mockMvc.perform(get("/api/v1/books/user"))
+        mockMvc.perform(get("/api/v1/books")
+                        .param("pageNo", "0")
+                        .param("pageSize", "2"))
                 .andDo(print())
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$").isArray())
-                .andExpect(jsonPath("$", hasSize(bookList.size())))
-                .andExpect(jsonPath("$[0].title", equalTo("Test")))
-                .andExpect(jsonPath("$[0].author", equalTo("Test")))
-                .andExpect(jsonPath("$[0].state", equalTo(State.BORROWED.toString())));
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.timestamp", notNullValue()))
+                .andExpect(jsonPath("$.message", equalTo("Page index must not be less than zero")));
     }
 
-    @Test
-    void testGetAllByUser_EMPLOYEE() throws Exception {
-        //given
-        User user = User.builder()
-                .username("Test")
-                .password("Test")
-                .role("ROLE_USER")
-                .build();
-        userRepository.save(user);
-        Book book = Book.builder()
-                .title("Test")
-                .author("Test")
-                .state(State.BORROWED)
-                .user(user)
-                .build();
-        List<Book> bookList = List.of(book);
-        book.setUser(user);
-        bookRepository.save(book);
-
-        //when //then
-        mockMvc.perform(get("/api/v1/books/user")
-                        .param("userId", Integer.toString(user.getId())))
-                .andDo(print())
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$").isArray())
-                .andExpect(jsonPath("$", hasSize(bookList.size())))
-                .andExpect(jsonPath("$[0].title", equalTo("Test")))
-                .andExpect(jsonPath("$[0].author", equalTo("Test")))
-                .andExpect(jsonPath("$[0].state", equalTo(State.BORROWED.toString())));
-    }
 }

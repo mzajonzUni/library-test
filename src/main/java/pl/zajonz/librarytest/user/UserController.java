@@ -2,8 +2,11 @@ package pl.zajonz.librarytest.user;
 
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
+import org.springframework.data.domain.Page;
 import org.springframework.http.HttpStatus;
+import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.*;
+import pl.zajonz.librarytest.book.model.BookDto;
 import pl.zajonz.librarytest.user.model.User;
 import pl.zajonz.librarytest.user.model.UserDto;
 import pl.zajonz.librarytest.user.model.command.CreateUserCommand;
@@ -25,11 +28,18 @@ public class UserController {
     }
 
     @GetMapping
-    public List<UserDto> getAll(@RequestParam(required = false, defaultValue = "0") int pageNo,
+    public Page<UserDto> getAll(@RequestParam(required = false, defaultValue = "1") int pageNo,
                                 @RequestParam(required = false, defaultValue = "50") int pageSize) {
-        return userService.getAll(pageNo, pageSize).stream()
-                .map(UserDto::fromEntity)
+        return userService.getAll(pageNo, pageSize).map(UserDto::fromEntity);
+    }
+
+    @GetMapping("/{id}/books")
+    public List<BookDto> getAllBooks(Authentication auth, @PathVariable int id) {
+        return userService.getAllBooks(auth.getName(), auth.getAuthorities().toString(), id)
+                .stream()
+                .map(BookDto::fromEntity)
                 .toList();
+
     }
 
 }

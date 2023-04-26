@@ -1,9 +1,9 @@
 package pl.zajonz.librarytest.book;
 
+import org.springframework.data.domain.Page;
 import pl.zajonz.librarytest.book.model.Book;
 
 import java.time.LocalDate;
-import java.util.List;
 
 public interface BookService {
     Book create(Book book);
@@ -12,9 +12,8 @@ public interface BookService {
 
     Book borrowBook(String name, int id, LocalDate to);
 
-    Book returnBook(String name, int id);
+    Book returnBook(String name, String role, int id);
 
-    List<Book> getAll(int pageNo, int pageSize);
+    Page<Book> getAll(int pageNo, int pageSize);
 
-    List<Book> getAllByUser(String name, String auth, int userId);
 }

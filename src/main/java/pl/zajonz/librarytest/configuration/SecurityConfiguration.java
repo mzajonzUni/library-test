@@ -24,11 +24,12 @@ public class SecurityConfiguration {
         return http.csrf(AbstractHttpConfigurer::disable)
                 .authorizeHttpRequests(auth -> {
                     auth.requestMatchers(HttpMethod.POST, "/api/v1/users").permitAll();
+                    auth.requestMatchers(HttpMethod.GET, "/api/v1/users/{id}/books").authenticated();
                     auth.requestMatchers(HttpMethod.GET, "/api/v1/users/**").hasRole("EMPLOYEE");
                     auth.requestMatchers("/h2").permitAll();
                     auth.requestMatchers(HttpMethod.POST, "/api/v1/books").hasRole("EMPLOYEE");
-                    auth.requestMatchers("/api/v1/books/block/**").hasRole("EMPLOYEE");
-                    auth.requestMatchers("/api/v1/books/borrow/**").hasRole("USER");
+                    auth.requestMatchers("/api/v1/books/{id}/block").hasRole("EMPLOYEE");
+                    auth.requestMatchers("/api/v1/books/{id}/borrow").hasRole("USER");
                     auth.requestMatchers(HttpMethod.GET, "/api/v1/books/**").permitAll();
                     auth.anyRequest().authenticated();
                 })
