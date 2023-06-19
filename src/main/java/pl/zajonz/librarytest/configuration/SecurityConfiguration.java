@@ -9,7 +9,7 @@ import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
 import org.springframework.security.config.annotation.web.configurers.AbstractHttpConfigurer;
 import org.springframework.security.web.SecurityFilterChain;
-import pl.zajonz.librarytest.user.UserServiceImpl;
+import pl.zajonz.librarytest.service.UserServiceImpl;
 
 @Configuration
 @EnableWebSecurity
@@ -24,12 +24,14 @@ public class SecurityConfiguration {
         return http.csrf(AbstractHttpConfigurer::disable)
                 .authorizeHttpRequests(auth -> {
                     auth.requestMatchers(HttpMethod.POST, "/api/v1/users").permitAll();
+                    auth.requestMatchers(HttpMethod.GET, "/api/v1/categories").permitAll();
+                    auth.requestMatchers(HttpMethod.PATCH, "/api/v1/categories/{id}/subscribe").hasRole("CUSTOMER");
                     auth.requestMatchers(HttpMethod.GET, "/api/v1/users/{id}/books").authenticated();
                     auth.requestMatchers(HttpMethod.GET, "/api/v1/users/**").hasRole("EMPLOYEE");
                     auth.requestMatchers("/h2").permitAll();
                     auth.requestMatchers(HttpMethod.POST, "/api/v1/books").hasRole("EMPLOYEE");
                     auth.requestMatchers("/api/v1/books/{id}/block").hasRole("EMPLOYEE");
-                    auth.requestMatchers("/api/v1/books/{id}/borrow").hasRole("USER");
+                    auth.requestMatchers("/api/v1/books/{id}/borrow").hasRole("CUSTOMER");
                     auth.requestMatchers(HttpMethod.GET, "/api/v1/books/**").permitAll();
                     auth.anyRequest().authenticated();
                 })

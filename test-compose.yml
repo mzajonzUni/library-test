@@ -1,0 +1,72 @@
+version: '3.8'
+services:
+  rabbitmq:
+    image: rabbitmq:3-management
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+    volumes:
+      - rabbitmq_data:/var/lib/rabbitmq
+    environment:
+      - RABBITMQ_DEFAULT_USER=Admin
+      - RABBITMQ_DEFAULT_PASS=Admin
+    networks:
+      - library-sys-network
+
+  mysql:
+    image: mysql:latest
+    ports:
+      - "3306:3306"
+    volumes:
+      - mysql_data:/var/lib/mysql_library
+    environment:
+      - MYSQL_DATABASE=library_db
+      - MYSQL_ROOT_PASSWORD=root
+      - MYSQL_ROOT_USERNAME=root
+      - RABBITMQ_DEFAULT_USER=Admin
+      - RABBITMQ_DEFAULT_PASS=Admin
+    networks:
+      - library-sys-network
+
+  library:
+    build:
+      context: ./library-test
+      dockerfile: ./Dockerfile
+    ports:
+      - "8080:8080"
+    networks:
+      - library-sys-network
+    depends_on:
+      - rabbitmq
+      - mysql
+
+  email-sender:
+    build:
+      context: ./email-sender
+      dockerfile: ./Dockerfile
+    ports:
+      - "8081:8080"
+    networks:
+      - library-sys-network
+    depends_on:
+      - rabbitmq
+
+  logging:
+    build:
+      context: ./logging
+      dockerfile: ./Dockerfile
+    ports:
+      - "8082:8080"
+    networks:
+      - library-sys-network
+    depends_on:
+      - rabbitmq
+
+volumes:
+  rabbitmq_data:
+    name: rabbitmq-data
+  mysql_data:
+    name: my-sql-data
+
+networks:
+  library-sys-network:
